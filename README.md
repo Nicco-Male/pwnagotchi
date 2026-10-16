@@ -24,6 +24,15 @@ The "old" Pwnagotchi used to have AI to help it learn from its environment, but 
 
 Multiple units within close physical proximity can "talk" to each other, advertising their presence to each other by broadcasting custom information elements using a parasite protocol [@evilsocket](https://x.com/evilsocket) built on top of the existing dot11 standard.
 
+## Experimental ARMv6 / ARMHF maintenance in this fork
+
+This fork is preparing a **community-maintained ARMv6 hard-float build** for
+the Raspberry Pi Zero W while keeping the same Python core and Web UI on
+ARM64 devices. This is experimental and **not an installable ARMv6 release yet**.
+
+See [ARMv6 support and test status](docs/armv6-support.md) for architecture
+constraints, the CI smoke check, and non-destructive hardware test guidance.
+
 ## Documentation
 
 https://github.com/jayofelony/pwnagotchi/wiki 
