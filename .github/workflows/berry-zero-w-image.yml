@@ -1,0 +1,85 @@
+name: Berry Zero W experimental image
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - build/pi-zero-w-test-image
+    paths:
+      - .github/workflows/berry-zero-w-image.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-image:
+    name: Build ARMv6 microSD test image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout the experimental fork
+        uses: actions/checkout@v4
+
+      - name: Install image tools and display free space
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends rsync xz-utils util-linux
+          df -h /
+
+      - name: Download pinned upstream 32-bit Raspberry Pi Zero W image
+        env:
+          BASE_URL: https://github.com/jayofelony/pwnagotchi/releases/download/v2.9.5.6/pwnagotchi-32bit-2.9.5.6.img.xz
+          BASE_SHA256: 71b4f22ea0aa72ad381c3af57747d8dc551f829dd8e1c32da1a3c078adc3c81a
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/berry-image"
+          curl -fL --retry 4 --connect-timeout 30 --max-time 1800 \
+            "$BASE_URL" -o "$RUNNER_TEMP/berry-image/upstream.img.xz"
+          echo "$BASE_SHA256  $RUNNER_TEMP/berry-image/upstream.img.xz" | sha256sum -c -
+          xz -dc "$RUNNER_TEMP/berry-image/upstream.img.xz" \
+            > "$RUNNER_TEMP/berry-image/berry.img"
+          df -h /
+
+      - name: Overlay the fork on the original ARMv6 filesystem
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="$RUNNER_TEMP/berry-image/berry.img"
+          MOUNT="$RUNNER_TEMP/berry-image/rootfs"
+          mkdir -p "$MOUNT"
+          LOOP="$(sudo losetup --find --show --partscan "$RAW")"
+          mounted=0
+          cleanup() {
+            if [ "$mounted" = 1 ]; then sudo umount "$MOUNT" || true; fi
+            sudo losetup -d "$LOOP" || true
+          }
+          trap cleanup EXIT
+          sudo udevadm settle || true
+          PART="${LOOP}p2"
+          test -b "$PART" || { echo "No root partition at $PART" >&2; exit 1; }
+          sudo mount "$PART" "$MOUNT"
+          mounted=1
+          sudo bash scripts/image/overlay-zero-w.sh "$MOUNT" "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+          sudo sync
+
+      - name: Compress and verify the experimental image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          FILE="berry-zero-w-armv6-test-${GITHUB_SHA:0:12}.img.xz"
+          xz -T 2 -6 -c "$RUNNER_TEMP/berry-image/berry.img" > "artifacts/$FILE"
+          xz -t "artifacts/$FILE"
+          ( cd artifacts && sha256sum "$FILE" > "$FILE.sha256" )
+          ls -lh artifacts/
+          df -h /
+
+      - name: Upload test image (NOT production validated)
+        uses: actions/upload-artifact@v4
+        with:
+          name: berry-zero-w-test-image
+          path: artifacts/
+          retention-days: 5
+          compression-level: 0
+          if-no-files-found: error
